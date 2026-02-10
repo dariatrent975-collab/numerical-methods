@@ -1,0 +1,133 @@
+import matplotlib.pyplot as plt
+import numpy as np
+
+# МНК
+def least_squares(x, y, degree):
+    m = degree
+    A = [[0.0 for _ in range(m+1)] for _ in range(m+1)]
+    B = [0.0 for _ in range(m+1)]
+    for k in range(m+1):
+        for j in range(m+1):
+            A[k][j] = sum(x_i ** (k + j) for x_i in x)
+        B[k] = sum(y_i * (x_i ** k) for x_i, y_i in zip(x, y))
+    return A, B
+
+# МНК через характеристическую матрицу 
+def least_squares_characteristic_coeffs(x, y, degree):
+    n = len(x)
+    m = degree
+    
+    # характеристическая матрица X
+    X = [[x_i**i for i in range(m+1)] for x_i in x]
+    
+    # формируем X^T * X
+    XTX = [[0.0 for _ in range(m+1)] for _ in range(m+1)]
+    for i in range(m+1):
+        for j in range(m+1):
+            XTX[i][j] = sum(X[k][i] * X[k][j] for k in range(n))
+    
+    # формируем X^T * y
+    XTy = [0.0 for _ in range(m+1)]
+    for i in range(m+1):
+        XTy[i] = sum(X[k][i] * y[k] for k in range(n))
+    
+    # Вычисляем (X^T * X)^-1 
+    XTX_np = np.array(XTX)
+    XTX_inv_np = np.linalg.inv(XTX_np)
+    XTX_inv = XTX_inv_np.tolist()
+    
+    # Вычисляем коэффициенты: a = (X^T * X)^-1 * X^T * y
+    coeffs = [0.0 for _ in range(m+1)]
+    for i in range(m+1):
+        for j in range(m+1):
+            coeffs[i] += XTX_inv[i][j] * XTy[j]
+    
+    return coeffs
+
+# метод Жордана-Гаусса 
+def jordan_gauss_solve(A, B):
+    n = len(A)
+    M = [A[i] + [B[i]] for i in range(n)]
+    for i in range(n):
+        if M[i][i] == 0:
+            for r in range(i+1, n):
+                if M[r][i] != 0:
+                    M[i], M[r] = M[r], M[i]
+                    break
+        pivot = M[i][i]
+        for j in range(i, n+1):
+            M[i][j] /= pivot
+        for r in range(n):
+            if r != i:
+                factor = M[r][i]
+                for j in range(i, n+1):
+                    M[r][j] -= factor * M[i][j]
+    return [M[i][n] for i in range(n)]
+
+def poly_func(x_val, coeffs):
+    return sum(c * x_val**i for i, c in enumerate(coeffs))
+
+x = [-2.13, -0.92, 0.34, 1.05, 2.26, 3.54, 4.51, 5.12, 6.01, 6.51, 7.10, 7.63]
+y = [14.41, 9.12, 5.20, 4.01, 2.03, 2.10, 2.80, 3.96, 5.98, 7.50, 9.46, 11.27]
+
+degrees = [2, 3, 4, 5]
+coeffs_all = {}
+R_total = {}
+
+# расчёт коэффициентов и R 
+for d in degrees:
+    if d in [2, 4]:
+        coeffs_all[d] = least_squares_characteristic_coeffs(x, y, d)
+        #print(f"Degree {d}: Coefficients calculated directly via characteristic matrix (with numpy inverse)")
+    else:
+        A, B_vec = least_squares(x, y, d)
+        coeffs_all[d] = jordan_gauss_solve(A, B_vec)
+        #print(f"Degree {d}: Coefficients calculated via normal equations")
+    
+    R_total[d] = sum((y_i - poly_func(x_i, coeffs_all[d]))**2 for x_i, y_i in zip(x, y))
+
+# запись в файл 
+with open("least_squares_results.txt", "w") as f:
+    header = ["x", "    y"] + [f"    y_{d}" for d in degrees]
+    f.write("\t".join(header) + "\n")
+    for i, xi in enumerate(x):
+        row = [f"{xi:.2f}", f"{y[i]:.2f}"]
+        for d in degrees:
+            yi_calc = poly_func(xi, coeffs_all[d])
+            row.append(f"{yi_calc:.3f}")
+        f.write("\t".join(row) + "\n")
+
+    r_row = ["R", ""] + [f"{R_total[d]:.3f}" for d in degrees]
+    f.write("\n" + "\t".join(r_row) + "\n\n")
+
+    f.write("Polynomials:\n")
+    for d in degrees:
+        poly_str = " + ".join([f"{coeffs_all[d][i]:.4f}*x**{i}" if i>0 else f"{coeffs_all[d][i]:.4f}" 
+                               for i in range(len(coeffs_all[d]))])
+        f.write(f"Degree {d}: y(x) = {poly_str}\n")
+
+print("Results saved to least_squares_results.txt")
+
+# график полиномов 
+x_plot = np.linspace(min(x)-1, max(x)+1, 500)
+plt.figure(figsize=(10,6))
+plt.scatter(x, y, color='red', label='Data points')
+colors = ['blue', 'green', 'orange', 'purple']
+for i, d in enumerate(degrees):
+    y_plot = [poly_func(xi, coeffs_all[d]) for xi in x_plot]
+    plt.plot(x_plot, y_plot, color=colors[i], label=f'Degree {d} polynomial')
+plt.title("Least Squares Polynomial Approximation")
+plt.xlabel("x")
+plt.ylabel("y")
+plt.legend(fontsize=10)
+plt.grid(True)
+plt.show()
+
+# столбчатая диаграмма 
+plt.figure(figsize=(8,5))
+plt.bar([str(d) for d in degrees], [R_total[d] for d in degrees], color='skyblue')
+plt.xlabel("Polynomial degree")
+plt.ylabel("Least squares criterion R")
+plt.title("Dependence of R on polynomial degree")
+plt.grid(axis='y', linestyle='--', alpha=0.7)
+plt.show()
